@@ -1,8 +1,26 @@
 import socket
 import subprocess
 import multiprocessing
+import getopt
+import sys
 
 HOST_UNREACHABLE_GER = "Zielhost nicht erreichbar"
+HOST_UNREACHABLE_ENG = "Destination Host Unreachable"
+start_addr = 1
+end_addr = 255
+reachable_hosts = []
+
+
+def print_banner():
+    print ("<=================== NetDevice ===================>")
+
+
+def usage():
+    print ("List all hosts connected to your network")
+    print ("Usage: NetDevice.py [flags]")
+    print ("-s start_address")
+    print ("-e end_address")
+    print ("")
 
 
 def own_ip():
@@ -16,35 +34,91 @@ def own_ip():
 
 def ping_host(address):
 
-    resp = subprocess.Popen(("ping -n 1 %s" % address), stdout=subprocess.PIPE)
+    command = ["ping", "-b", "-c 1", str(address)]
+    resp = subprocess.Popen(command, stdout=subprocess.PIPE)
     out = resp.communicate()[0]
 
-    if HOST_UNREACHABLE_GER not in str(out):
+    if HOST_UNREACHABLE_ENG not in str(out):
         return address
 
 
-def ping_ip_range(start, end):
-    ip_parts = str(own_ip()).split('.')
+def get_host_name(host):
+    try:
+        name = socket.gethostbyaddr(host)[0]
+        return name
+    except socket.error as err:
+        print err
+
+
+def generate_ips_to_ping(start_index, end_index):
     ips = []
 
-    for i in range(start, end):
-        curr_add = "%s.%s.%s.%d" % (ip_parts[0], ip_parts[1], ip_parts[2], i)
-        ips.append(curr_add)
+    if (start_index > -1) and (end_index > start_index):
+        ip_parts = str(own_ip()).split('.')
 
-    num_threads = 2 * multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(num_threads)
+        for i in range(start_index, end_index):
+            curr_add = "%s.%s.%s.%d" % (ip_parts[0], ip_parts[1], ip_parts[2], i)
+            ips.append(curr_add)
 
-    print("processing...")
-    reachable_hosts = pool.map(ping_host, ips)
-    pool.close()
-    pool.join()
-    print("Pool closed")
+    return ips
 
-    for a in reachable_hosts:
-        print("%s : Host reachable" % a)
+
+def ping_ip_range(start, end):
+    ips = generate_ips_to_ping(int(start), int(end))
+
+    if len(ips) > 0:
+        num_threads = 2 * multiprocessing.cpu_count()
+        pool = multiprocessing.Pool(num_threads)
+
+        print("processing...")
+        pinged_hosts = pool.map(ping_host, ips)
+        pool.close()
+        pool.join()
+        print("Processing Finished")
+        check_device_names(pinged_hosts)
+
+    else:
+        print ("Error no addresses to ping!")
+
+
+def check_device_names(pinged_ips):
+    for ip in pinged_ips:
+        if ip is not None:
+            reachable_hosts.append(ip)
+
+    print("IPv4 Address \t\t\t Status \t\t\t\t Hostname")
+    if len(reachable_hosts) > 0:
+        for a in reachable_hosts:
+            device_name = get_host_name(a)
+            print ("%s \t\t\t Host reachable \t\t\t %s" % (a, device_name))
+            print ("")
+
+
+def main():
+    global start_addr
+    global end_addr
+
+    if not len(sys.argv[1:]):
+        usage()
+
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "s:e:")
+    except getopt.GetoptError as err:
+        print (err)
+
+    for o, a in opts:
+        if o in "-s":
+            start_addr = a
+        elif o in "-e":
+            end_addr = a
+        else:
+            print ("Error invalid input!")
+            usage()
+
+    ping_ip_range(start_addr, end_addr)
 
 
 if __name__ == '__main__':
-    ping_ip_range(0, 150)
+    main()
 
 
