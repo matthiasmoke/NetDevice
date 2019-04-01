@@ -7,6 +7,7 @@ import platform
 
 PING_COMM_UNIX = ["ping", "-b", "-c 1"]
 PING_COMM_WIN = ["ping", "-n 1"]
+NMAP_OS_COMM = ["nmap", "-O"]
 HOST_UNREACHABLE_GER = "Zielhost nicht erreichbar"
 HOST_UNREACHABLE_ENG = "Destination Host Unreachable"
 start_addr = 1
@@ -21,9 +22,10 @@ def print_banner():
 def usage():
     print("List all hosts connected to your network")
     print("Usage: NetDevice.py [flags]")
-    print("-s start_address")
-    print("-e end_address")
-    print("")
+    print("-s : Start of IP range to check")
+    print("-p start_address end_address   : Ping Ip range and get host names (start and end indexes are optional)")
+    print("-o ip_address                  : Get os information from given address")
+    print("-h                             : Usage info")
 
 
 # gets ip address of executing host
@@ -37,7 +39,7 @@ def own_ip():
 
 
 # Returns os specific ping command with address inserted
-def get_ping_command(address):
+def generate_ping_command(address):
     global PING_COMM_UNIX
     global PING_COMM_WIN
     os = platform.system()
@@ -55,8 +57,13 @@ def get_ping_command(address):
 
 # pings a host
 def ping_host(address):
-    command = get_ping_command(address)
-    resp = subprocess.Popen(command, stdout=subprocess.PIPE)
+    command = generate_ping_command(address)
+
+    try:
+        resp = subprocess.Popen(command, stdout=subprocess.PIPE)
+    except subprocess.SubprocessError as err:
+        print(str(err))
+
     out = resp.communicate()[0]
 
     if HOST_UNREACHABLE_ENG not in str(out):
@@ -118,6 +125,25 @@ def check_device_names(pinged_ips):
             print("")
 
 
+def get_os_info(ip_address):
+    command = []
+    command += NMAP_OS_COMM
+
+    if len(ping_host(ip_address)):
+        command.append(ip_address)
+
+        try:
+            resp = subprocess.Popen(command, stdout=subprocess.PIPE)
+            out = resp.communicate()[0]
+        except subprocess.SubprocessError as err:
+            print(str(err))
+
+        print(out)
+
+    else:
+        print("Host not reachable!")
+
+
 def main():
     global start_addr
     global end_addr
@@ -126,21 +152,32 @@ def main():
         usage()
 
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "s:e:")
+        opts, args = getopt.getopt(sys.argv[1:], "p:o:h")
     except getopt.GetoptError as err:
         print(err)
         usage()
 
     for o, a in opts:
-        if o in "-s":
-            start_addr = a
-        elif o in "-e":
-            end_addr = a
+
+        if o in "-p":
+            if len(a):
+                start_addr = a
+
+            if len(args):
+                end_addr = args[0]
+
+            ping_ip_range(start_addr, end_addr)
+
+        elif o in "-os":
+            if len(a):
+                get_os_info(a)
+
+        elif o in "-h":
+            usage()
+
         else:
             print("Error invalid input!")
             usage()
-
-    ping_ip_range(start_addr, end_addr)
 
 
 if __name__ == '__main__':
